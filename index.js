@@ -27,8 +27,6 @@ app.use('*', function (req, res, next) {
     err.status = 404
     next(err)
   }
-
-  return
 })
 
 // 404 handler middleware, respond with JSON only
@@ -42,8 +40,6 @@ app.use(function (err, req, res, next) {
     status: 404,
     error: err.message || "These are not the snakes you're looking for"
   })
-
-  return
 })
 
 // 500 handler middleware, respond with JSON only
@@ -57,8 +53,6 @@ app.use(function (err, req, res, next) {
     status: statusCode,
     error: err
   })
-
-  return
 })
 
 var server = app.listen(app.get('port'), function () {
