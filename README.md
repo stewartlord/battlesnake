@@ -1,4 +1,11 @@
-# battlesnake-node(js)
+# Battlesnake!
+
+
+```
+npm install
+node .
+```
+
 
 A simple [BattleSnake AI](http://battlesnake.io) written in Javascript for NodeJS.
 

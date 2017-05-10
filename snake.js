@@ -1,14 +1,11 @@
-// const aStar   = require('a-star');
-const aStar   = require('../a-star');
-const express = require('express');
-const router  = express.Router();
+const aStar = require('./a-star');
 
 const SEARCH_TIMEOUT = 50;
 
 let state = {};
 
-// Handle POST request to '/start'
-router.post('/start', function (req, res) {
+// Handle start requests
+module.exports.start = function(req, res) {
   state = req.body;
 
   // Response data
@@ -20,10 +17,10 @@ router.post('/start', function (req, res) {
   };
 
   return res.json(data);
-});
+}
 
-// Handle POST request to '/move'
-router.post('/move', function (req, res) {
+// Handle move requests
+module.exports.move = function(req, res) {
   //console.log('\n------------------------');
   state = req.body;
 
@@ -124,7 +121,7 @@ router.post('/move', function (req, res) {
 
   // no valid moves
   return moveResponse(res, 'up', 'FML');
-});
+}
 
 function moveResponse(res, move, taunt) {
   taunt = taunt + ' ' + move;
@@ -332,5 +329,3 @@ function getOccupiedNodes(snakes) {
   }
   return nodes;
 }
-
-module.exports = router;

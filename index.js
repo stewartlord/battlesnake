@@ -1,25 +1,20 @@
-/**
- * NOTE: Don't worry about editing this file!
- * Where you want to focus is adding your AI to the endpoints in routes/index.js.
- */
-
 var bodyParser = require('body-parser')
 var express = require('express')
 var logger = require('morgan')
+var snake = require('./snake');
+
 var app = express()
-var routes = require('./routes')
 
-// For deployment to Heroku, the port needs to be set using ENV, so
-// we check for the port number in process.env
 app.set('port', (process.env.PORT || 9001))
-
 app.enable('verbose errors')
-
 app.use(logger('dev'))
 app.use(bodyParser.json())
-app.use(routes)
 
-app.use('*',function (req, res, next) {
+// Handle POSTs to start and move
+app.post('/start', snake.start);
+app.post('/move', snake.move);
+
+app.use('*', function (req, res, next) {
   if (req.url === '/favicon.ico') {
     // Short-circuit favicon requests
     res.set({'Content-Type': 'image/x-icon'})
