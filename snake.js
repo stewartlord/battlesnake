@@ -21,7 +21,6 @@ module.exports.start = function(req, res) {
 
 // Handle move requests
 module.exports.move = function(req, res) {
-  //console.log('\n------------------------');
   state = req.body;
 
   let ourSnake = getSnake(state);
@@ -76,7 +75,6 @@ module.exports.move = function(req, res) {
     results.sort((a, b) => {
       return a.cost - b.cost;
     });
-    // console.log(results);
     return moveResponse(
       res,
       direction(ourHead, results[0].path[1]),
@@ -110,7 +108,6 @@ module.exports.move = function(req, res) {
 
     return b.spaceSize - a.spaceSize;
   });
-  // console.log(moves);
   if (moves.length) {
     return moveResponse(
       res,
@@ -125,7 +122,6 @@ module.exports.move = function(req, res) {
 
 function moveResponse(res, move, taunt) {
   taunt = taunt + ' ' + move;
-  //console.log(taunt);
   return res.json({move, taunt});
 }
 
