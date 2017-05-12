@@ -1,4 +1,6 @@
-# Battlesnake!
+# BattleSnake!
+
+![Screenshot](/screenshot.png)
 
 ```
 npm install
