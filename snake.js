@@ -10,7 +10,7 @@ module.exports.start = function(req, res) {
 
   // Response data
   var data = {
-    color: "#222222",
+    color: "#b2d8ff",
     name: "Come Slither",
     head_url: "http://www.placecage.com/c/200/200", // optional, but encouraged!
     taunt: "START",
@@ -37,7 +37,7 @@ module.exports.move = function(req, res) {
     result.goal = 'FOOD';
 
     // get hungrier as we lose life
-    result.cost -= Math.round(100 - ourSnake.health);
+    result.cost -= Math.pow(100 - ourSnake.health, 2) / 100;
 
     // get hungrier if food is further away
     result.cost -= distance(state.food.data[i], ourHead);
@@ -273,15 +273,31 @@ function isPossibleNextMove(state, snakes, node) {
   });
 }
 
+function getProximityToSnakes(state, snakes, node) {
+  let proximity = 0;
+  let halfBoard = (Math.min(state.width, state.height) - 1) / 2;
+  for (let i = 0; i < snakes.length; i++) {
+    let headNode = getHeadNode(snakes[i]);
+    let gap = distance(headNode, node);
+
+    // insignificant proximity if > half the board away
+    if (gap >= halfBoard) continue;
+
+    // otherwise, proximity is closeness squared, then halved
+    proximity += Math.pow(halfBoard - gap, 2) / 2
+  }
+
+  return proximity;
+}
+
 function heuristic(state, node) {
   // cost goes up if node is close to a wall because that limits escape routes
-  let wallCost = getWallCost(state, node);
+  let cost = getWallCost(state, node);
 
-  let enemyCost = 0;
-  if (isPossibleNextMove(state, getHurtfulSnakes(state), node)) {
-    enemyCost = 100;
-  }
-  return wallCost + enemyCost;
+  // cost goes up if node is close to another harmful snake
+  cost += getProximityToSnakes(state, getHurtfulSnakes(state), node);
+
+  return cost;
 }
 
 function direction(fromNode, toNode) {
