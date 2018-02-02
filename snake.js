@@ -31,16 +31,16 @@ module.exports.move = function(req, res) {
   let results = [];
 
   // seek out food
-  for (let i = 0; i < state.food.length; i++) {
-    result = aStarSearch(state, ourHead, [state.food[i]]);
+  for (let i = 0; i < state.food.data.length; i++) {
+    result = aStarSearch(state, ourHead, [state.food.data[i]]);
     if (result.status != 'success') continue;
     result.goal = 'FOOD';
 
     // get hungrier as we lose life
-    result.cost -= Math.round(100 - ourSnake.health_points);
+    result.cost -= Math.round(100 - ourSnake.health);
 
     // get hungrier if food is further away
-    result.cost -= distance(state.food[i], ourHead);
+    result.cost -= distance(state.food.data[i], ourHead);
 
     results.push(result);
   }
@@ -58,8 +58,9 @@ module.exports.move = function(req, res) {
   // don't chase food if we can't fit into path
   results = results.filter((result) => {
     if (result.goal == 'TAIL') return true;
+    if (result.path.length < 2) return false;
     let spaceSize = getSpaceSize(state, result.path[1]);
-    return spaceSize > ourSnake.coords.length;
+    return spaceSize > ourSnake.body.data.length;
   });
 
   // heavily penalize paths with no path back to our tail
@@ -128,13 +129,13 @@ function moveResponse(res, move, taunt) {
 function getSpaceSize(state, node) {
   let validNodes = [node];
   let seenNodes  = {};
-  seenNodes[node.toString()] = true;
+  seenNodes[getNodeHash(node)] = true;
 
   for (let i = 0; i < validNodes.length; i++) {
     let neighbors = validNeighbors(state, validNodes[i]);
     for (let j = 0; j < neighbors.length; j++) {
-      if (!seenNodes[neighbors[j].toString()]) {
-        seenNodes[neighbors[j].toString()] = true;
+      if (!seenNodes[getNodeHash(neighbors[j])]) {
+        seenNodes[getNodeHash(neighbors[j])] = true;
         validNodes.push(neighbors[j]);
       }
     }
@@ -150,58 +151,58 @@ function hasPathToTail(state, startNode, snake) {
 }
 
 function getHeadNode(snake) {
-  return snake.coords.slice(0,1)[0].slice();
+  return snake.body.data.slice(0,1)[0];
 }
 
 function getTailNode(snake) {
-  return snake.coords.slice(-1)[0].slice();
+  return snake.body.data.slice(-1)[0];
 }
 
 function getSnake(state, snakeId) {
-  if (!snakeId) snakeId = state.you;
-  for (let snake of state.snakes) {
+  if (!snakeId) snakeId = state.you.id;
+  for (let snake of state.snakes.data) {
     if (snake.id == snakeId) return snake;
   }
 }
 
 function getOtherSnakes(state, snakeId) {
-  if (!snakeId) snakeId = state.you;
-  return state.snakes.filter((snake) => {
+  if (!snakeId) snakeId = state.you.id;
+  return state.snakes.data.filter((snake) => {
     return snake.id != snakeId;
   });
 }
 
 function getHurtfulSnakes(state, snakeId) {
-  if (!snakeId) snakeId = state.you;
+  if (!snakeId) snakeId = state.you.id;
   let subjectSnake = getSnake(state, snakeId);
-  return state.snakes.filter((snake) => {
-    return snake.id != snakeId && snake.coords.length >= subjectSnake.coords.length;
+  return state.snakes.data.filter((snake) => {
+    return snake.id != snakeId && snake.body.data.length >= subjectSnake.body.data.length;
   });
 }
 
 function isSameNode(a, b) {
-  return a[0] === b[0] && a[1] === b[1];
+  return a.x === b.x && a.y === b.y;
 }
 
 function isInNodes(node, nodes) {
   for (let i = 0; i < nodes.length; i++) {
-    if (node[0] === nodes[i][0] && node[1] === nodes[i][1]) return true;
+    if (node.x === nodes[i].x && node.y === nodes[i].y) return true;
   }
   return false;
 }
 
 function isAdjacent(a, b) {
-    if (a[0] == b[0]) {
-      return a[1] == b[1]-1 || a[1] == b[1]+1
-    } else if (a[1] == b[1]) {
-      return a[0] == b[0]-1 || a[0] == b[0]+1
+    if (a.x == b.x) {
+      return a.y == b.y-1 || a.y == b.y+1
+    } else if (a.y == b.y) {
+      return a.x == b.x-1 || a.x == b.x+1
     }
     return false;
 }
 
 function isSnake(state, node) {
-  for (let i = 0; i < state.snakes.length; i++) {
-    if (isInNodes(node, state.snakes[i].coords)) {
+  for (let i = 0; i < state.snakes.data.length; i++) {
+    if (isInNodes(node, state.snakes.data[i].body.data)) {
       return true;
     }
   }
@@ -209,28 +210,27 @@ function isSnake(state, node) {
 }
 
 function isFood(state, node) {
-  return isInNodes(node, state.food);
+  return isInNodes(node, state.food.data);
 }
 
 function isWall(state, node) {
-  return node[0] < 0 || node[0] >= state.width || node[1] < 0 || node[1] >= state.height;
+  return node.x < 0 || node.x >= state.width || node.y < 0 || node.y >= state.height;
 }
 
 function distance(a, b) {
-  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 function neighbors(node) {
   return [
-    [node[0] - 1, node[1]],
-    [node[0] + 1, node[1]],
-    [node[0], node[1] - 1],
-    [node[0], node[1] + 1]
+    {x: node.x - 1, y: node.y},
+    {x: node.x + 1, y: node.y},
+    {x: node.x, y: node.y - 1},
+    {x: node.x, y: node.y + 1}
   ];
 }
 
 function validNeighbors(state, node) {
-  let ourSnake = getSnake(state);
   return neighbors(node).filter((node) => {
     // walls are not valid
     if (isWall(state, node)) return false;
@@ -247,14 +247,14 @@ function validNeighbors(state, node) {
 }
 
 function isMovingTail(state, node) {
-  for (let i = 0; i < state.snakes.length; i++) {
-    let coords = state.snakes[i].coords;
+  for (let i = 0; i < state.snakes.data.length; i++) {
+    let body = state.snakes.data[i].body.data;
 
     // if it's not the tail node, consider next snake
-    if (!isSameNode(node, coords[coords.length - 1])) continue;
+    if (!isSameNode(node, body[body.length - 1])) continue;
 
     // if snake is growing, tail won't move
-    if (isGrowing(state.snakes[i])) return false;
+    if (isGrowing(state.snakes.data[i])) return false;
 
     // must be a moving tail
     return true;
@@ -263,8 +263,8 @@ function isMovingTail(state, node) {
 }
 
 function isGrowing(snake) {
-  let coords = snake.coords;
-  return isSameNode(coords[coords.length - 1], coords[coords.length - 2]);
+  let body = snake.body.data;
+  return isSameNode(body[body.length - 1], body[body.length - 2]);
 }
 
 function isPossibleNextMove(state, snakes, node) {
@@ -285,32 +285,35 @@ function heuristic(state, node) {
 }
 
 function direction(fromNode, toNode) {
-  if (fromNode[1] > toNode[1]) return 'up';
-  if (fromNode[1] < toNode[1]) return 'down';
-  if (fromNode[0] > toNode[0]) return 'left';
-  if (fromNode[0] < toNode[0]) return 'right';
+  if (fromNode.y > toNode.y) return 'up';
+  if (fromNode.y < toNode.y) return 'down';
+  if (fromNode.x > toNode.x) return 'left';
+  if (fromNode.x < toNode.x) return 'right';
 }
 
 function aStarSearch(state, startNode, targets) {
   let options = {
     start: startNode,
-    isEnd: (node) => {
-      return isInNodes(node, targets);
-    },
+    isEnd: (node) => isInNodes(node, targets),
     neighbor: (node) => validNeighbors(state, node),
     distance: distance,
     heuristic: (node) => heuristic(state, node),
+    hash: getNodeHash,
     timeout: SEARCH_TIMEOUT
   }
   return aStar(options);
+}
+
+function getNodeHash(node) {
+  return `${node.x},${node.y}`
 }
 
 function getWallCost(state, node) {
   let halfWidth  = (state.width - 1) / 2;
   let halfHeight = (state.height - 1) / 2;
   let deviation  = [
-    Math.abs(node[0] - halfWidth)  / halfWidth,
-    Math.abs(node[1] - halfHeight) / halfHeight
+    Math.abs(node.x - halfWidth)  / halfWidth,
+    Math.abs(node.y - halfHeight) / halfHeight
   ];
 
   return Math.round(Math.max(...deviation) * ((halfWidth + halfHeight) / 4));
@@ -319,8 +322,8 @@ function getWallCost(state, node) {
 function getOccupiedNodes(snakes) {
   let nodes = [];
   for (let snake of snakes) {
-    for (let i = 0; i < snake.coords.length; i++) {
-      nodes.push(snake.coords[i]);
+    for (let i = 0; i < snake.body.data.length; i++) {
+      nodes.push(snake.body.data[i]);
     }
   }
   return nodes;
