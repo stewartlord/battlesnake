@@ -1,6 +1,9 @@
 const aStar = require('./a-star');
 
 const SEARCH_TIMEOUT = 50;
+const COST_COST_HEAVY = 1000;
+const COST_MODERATE = 250;
+const COST_LIGHT = 100;
 
 let state = {};
 
@@ -51,23 +54,34 @@ module.exports.move = function(req, res) {
     return Math.min(current.path.length, closest);
   }, Number.MAX_SAFE_INTEGER);
 
-  // determine 'food advantage'
-  // (how much closer-to/further-from food we are)
-  let enemyDistanceToFood = state.food.data.reduce((closest, current) => {
-    return Math.min(enemyDistance(state, current), closest);
-  }, Number.MAX_SAFE_INTEGER);
-  let ourDistanceToFood = state.food.data.reduce((closest, current) => {
-    return Math.min(distance(ourHead, current), closest);
-  }, Number.MAX_SAFE_INTEGER);
-  let foodAdvantage = enemyDistanceToFood - ourDistanceToFood;
-  console.log('FOOD ADV.', foodAdvantage);
+  // we want to the be closest snake to at least one piece of food
+  // determine how close we are vs. how close our enemies are
+  let foodDistances = [];
+  for (let i = 0; i < results.length; i++) {
+    result = results[i];
+    let foodNode = result.path[result.path.length - 1];
+    let ourDistance = distance(ourHead, foodNode);
+    let otherDistance = enemyDistance(state, foodNode);
+    foodDistances.push({
+      foodNode,
+      ourDistance,
+      enemyDistance: otherDistance,
+      advantage: otherDistance - ourDistance
+    })
+  }
+  let foodAdvantages = foodDistances.slice().sort((a, b) => b.advantage - a.advantage);
+  let foodOpportunities = foodDistances.slice().sort((a, b) => b.enemyDistance - a.enemyDistance);
+  let foodAdvantage = foodAdvantages.length && foodAdvantages[0];
+  let foodOpportunity = foodOpportunities.length && foodOpportunities[0];
 
   // 'must eat' if steps to food consume >70% of health
-  // 'should eat' if low food advantage or steps to food consume >30% of health
+  // 'should eat' if steps to food consume >30% of health
+  // 'seek food' if food advantage is < 3
   let canEat = results.length;
   let mustEat = canEat && (ourSnake.health * .7) < closestFood;
-  let shouldEat = canEat && (foodAdvantage < 3 || (ourSnake.health * .3) < closestFood);
-  console.log('SHOULD/MUST', shouldEat, mustEat);
+  let shouldEat = canEat && (ourSnake.health * .3) < closestFood;
+  let seekFood = foodAdvantage && foodAdvantage.advantage < 3;
+  console.log('SHOULD/MUST/SEEK', shouldEat, mustEat, seekFood);
 
   // if eating is optional, seek tail nodes
   if (!mustEat) {
@@ -81,7 +95,7 @@ module.exports.move = function(req, res) {
     }
   }
 
-  // penalize paths
+  // adjust the cost of paths
   for (let i = 0; i < results.length; i++) {
     let result = results[i];
     let path = result.path;
@@ -90,29 +104,32 @@ module.exports.move = function(req, res) {
 
     // heavily if end point has no path back to our tail
     if (!hasPathToTail(state, endNode, ourSnake)) {
-      result.cost += 1000;
+      result.cost += COST_HEAVY;
     }
 
     // heavily if not a food path and start point has no path to food (in time)
     if (result.goal !== 'FOOD' && !hasPathToFood(state, startNode, ourSnake)) {
-      result.cost += 1000;
+      result.cost += COST_HEAVY;
     }
 
     // moderately if not a food path and we should be eating
-    if (result.goal !== 'FOOD' && (shouldEat || mustEat)) {
-      result.cost += 250;
+    if (result.goal !== 'FOOD' && (shouldEat || mustEat || seekFood)) {
+      result.cost += COST_MODERATE;
     }
 
     // lightly if a food path and we should not be eating
-    if (result.goal === 'FOOD' && (!shouldEat && !mustEat)) {
-      result.cost += ourSnake.health;
+    if (result.goal === 'FOOD' && (!shouldEat && !mustEat && !seekFood)) {
+      result.cost += COST_LIGHT;
     }
 
-    // lightly if a food path, there are multiple food paths, and another snake is closer to this one
-    if (result.goal === 'FOOD' && state.food.data.length > 1) {
-      if (enemyDistance(state, endNode) < distance(ourHead, endNode)) {
-        result.cost += (100 - ourSnake.health);
-      }
+    // lightly if: food path, multiple food paths, no advantage, not most available
+    if (result.goal === 'FOOD'
+      && state.food.data.length > 1
+      && foodAdvantage
+      && foodAdvantage.advantage < 1
+      && getNodeHash(endNode) !== getNodeHash(foodOpportunity.foodNode)
+    ) {
+      result.cost += COST_LIGHT;
     }
   }
 
@@ -181,6 +198,7 @@ function enemyDistance(state, node) {
   }, Number.MAX_SAFE_INTEGER);
 }
 
+// *** add a pessimistic mode that 'adds 3 heads' to each snake
 function getSpaceSize(state, node) {
   let validNodes = [node];
   let seenNodes  = {};
@@ -350,8 +368,8 @@ function getProximityToSnakes(state, snakes, node) {
     // insignificant proximity if > half the board away
     if (gap >= halfBoard) continue;
 
-    // otherwise, proximity is closeness squared, then halved
-    proximity += Math.pow(halfBoard - gap, 2) / 2
+    // otherwise, proximity is closeness squared, then quartered
+    proximity += Math.pow(halfBoard - gap, 2) / 4
   }
 
   return proximity;
