@@ -21,6 +21,7 @@ module.exports.start = function(req, res) {
 
 // Handle move requests
 module.exports.move = function(req, res) {
+  console.log('-');
   state = req.body;
 
   let ourSnake = getSnake(state);
@@ -30,44 +31,88 @@ module.exports.move = function(req, res) {
   let result;
   let results = [];
 
-  // seek out food
+  // compute paths to food
   for (let i = 0; i < state.food.data.length; i++) {
     result = aStarSearch(state, ourHead, [state.food.data[i]]);
     if (result.status != 'success') continue;
     result.goal = 'FOOD';
-
-    // get hungrier as we lose life
-    result.cost -= Math.pow(100 - ourSnake.health, 2) / 100;
-
-    // get hungrier if food is further away
-    result.cost -= distance(state.food.data[i], ourHead);
-
     results.push(result);
   }
 
-  // seek nodes adjacent to our tail and including our tail (unless growing)
-  let tailTargets = validNeighbors(state, ourTail);
-  if (!isGrowing(ourSnake)) tailTargets.push(ourTail);
-  for (let i = 0; i < tailTargets.length; i++) {
-    result = aStarSearch(state, ourHead, [tailTargets[i]]);
-    if (result.status != 'success') continue;
-    result.goal = 'TAIL';
-    results.push(result);
-  }
-
-  // don't chase food if we can't fit into path
+  // eliminate food paths that we can't fit into
   results = results.filter((result) => {
-    if (result.goal == 'TAIL') return true;
     if (result.path.length < 2) return false;
     let spaceSize = getSpaceSize(state, result.path[1]);
     return spaceSize > ourSnake.body.data.length;
   });
 
-  // heavily penalize paths with no path back to our tail
+  // determine closest food
+  let closestFood = results.reduce((closest, current) => {
+    return Math.min(current.path.length, closest);
+  }, Number.MAX_SAFE_INTEGER);
+
+  // determine 'food advantage'
+  // (how much closer-to/further-from food we are)
+  let enemyDistanceToFood = state.food.data.reduce((closest, current) => {
+    return Math.min(enemyDistance(state, current), closest);
+  }, Number.MAX_SAFE_INTEGER);
+  let ourDistanceToFood = state.food.data.reduce((closest, current) => {
+    return Math.min(distance(ourHead, current), closest);
+  }, Number.MAX_SAFE_INTEGER);
+  let foodAdvantage = enemyDistanceToFood - ourDistanceToFood;
+  console.log('FOOD ADV.', foodAdvantage);
+
+  // 'must eat' if steps to food consume >70% of health
+  // 'should eat' if low food advantage or steps to food consume >30% of health
+  let canEat = results.length;
+  let mustEat = canEat && (ourSnake.health * .7) < closestFood;
+  let shouldEat = canEat && (foodAdvantage < 3 || (ourSnake.health * .3) < closestFood);
+  console.log('SHOULD/MUST', shouldEat, mustEat);
+
+  // if eating is optional, seek tail nodes
+  if (!mustEat) {
+    let tailTargets = goodNeighbors(state, ourTail);
+    if (!isGrowing(ourSnake)) tailTargets.push(ourTail);
+    for (let i = 0; i < tailTargets.length; i++) {
+      result = aStarSearch(state, ourHead, [tailTargets[i]]);
+      if (result.status != 'success') continue;
+      result.goal = 'TAIL';
+      results.push(result);
+    }
+  }
+
+  // penalize paths
   for (let i = 0; i < results.length; i++) {
-    let path = results[i].path;
-    if (!hasPathToTail(state, path[path.length - 1], ourSnake)) {
-      results[i].cost += 1000;
+    let result = results[i];
+    let path = result.path;
+    let endNode = path[path.length - 1];
+    let startNode = path[1];
+
+    // heavily if end point has no path back to our tail
+    if (!hasPathToTail(state, endNode, ourSnake)) {
+      result.cost += 1000;
+    }
+
+    // heavily if not a food path and start point has no path to food (in time)
+    if (result.goal !== 'FOOD' && !hasPathToFood(state, startNode, ourSnake)) {
+      result.cost += 1000;
+    }
+
+    // moderately if not a food path and we should be eating
+    if (result.goal !== 'FOOD' && (shouldEat || mustEat)) {
+      result.cost += 250;
+    }
+
+    // lightly if a food path and we should not be eating
+    if (result.goal === 'FOOD' && (!shouldEat && !mustEat)) {
+      result.cost += ourSnake.health;
+    }
+
+    // lightly if a food path, there are multiple food paths, and another snake is closer to this one
+    if (result.goal === 'FOOD' && state.food.data.length > 1) {
+      if (enemyDistance(state, endNode) < distance(ourHead, endNode)) {
+        result.cost += (100 - ourSnake.health);
+      }
     }
   }
 
@@ -76,6 +121,7 @@ module.exports.move = function(req, res) {
     results.sort((a, b) => {
       return a.cost - b.cost;
     });
+    results.forEach(result => console.log(result.goal, result.cost));
     return moveResponse(
       res,
       direction(ourHead, results[0].path[1]),
@@ -123,7 +169,16 @@ module.exports.move = function(req, res) {
 
 function moveResponse(res, move, taunt) {
   taunt = taunt + ' ' + move;
+  console.log(taunt);
   return res.json({move, taunt});
+}
+
+function enemyDistance(state, node) {
+  let enemySnakes = getOtherSnakes(state);
+  return enemySnakes.reduce((closest, current) => {
+    let headNode = getHeadNode(current);
+    return Math.min(distance(node, headNode), closest);
+  }, Number.MAX_SAFE_INTEGER);
 }
 
 function getSpaceSize(state, node) {
@@ -148,6 +203,12 @@ function hasPathToTail(state, startNode, snake) {
   let snakeTail = getTailNode(snake);
   let result = aStarSearch(state, startNode, validNeighbors(state, snakeTail));
   return result.status == 'success';
+}
+
+function hasPathToFood(state, startNode, snake) {
+  let snakeHead = getTailNode(snake);
+  let result = aStarSearch(state, snakeHead, state.food.data);
+  return result.status == 'success' && result.path.length < state.you.health;
 }
 
 function getHeadNode(snake) {
@@ -235,14 +296,18 @@ function validNeighbors(state, node) {
     // walls are not valid
     if (isWall(state, node)) return false;
 
-    // don't consider food nodes adjacent to the head of a bigger snake
-    if (isFood(state, node) && isPossibleNextMove(state, getHurtfulSnakes(state), node)) return false;
-
     // don't consider occupied nodes unless they are moving tails
     if (isSnake(state, node) && !isMovingTail(state, node)) return false;
 
     // looks valid
     return true;
+  });
+}
+
+function goodNeighbors(state, node) {
+  return validNeighbors(state, node).filter((node) => {
+    // don't consider nodes adjacent to the head of a bigger snake
+    return !isPossibleNextMove(state, getHurtfulSnakes(state), node);
   });
 }
 
@@ -277,6 +342,8 @@ function getProximityToSnakes(state, snakes, node) {
   let proximity = 0;
   let halfBoard = (Math.min(state.width, state.height) - 1) / 2;
   for (let i = 0; i < snakes.length; i++) {
+    if (snakes[i].id === state.you.id) continue;
+
     let headNode = getHeadNode(snakes[i]);
     let gap = distance(headNode, node);
 
@@ -311,7 +378,7 @@ function aStarSearch(state, startNode, targets) {
   let options = {
     start: startNode,
     isEnd: (node) => isInNodes(node, targets),
-    neighbor: (node) => validNeighbors(state, node),
+    neighbor: (node) => goodNeighbors(state, node),
     distance: distance,
     heuristic: (node) => heuristic(state, node),
     hash: getNodeHash,
