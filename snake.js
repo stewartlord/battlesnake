@@ -1,7 +1,7 @@
 const aStar = require('./a-star');
 
 const SEARCH_TIMEOUT = 50;
-const COST_COST_HEAVY = 1000;
+const COST_HEAVY = 1000;
 const COST_MODERATE = 250;
 const COST_LIGHT = 100;
 
