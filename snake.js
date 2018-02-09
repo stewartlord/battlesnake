@@ -215,9 +215,12 @@ function getSpaceSize(state, node, pessimistic) {
   seenNodes[getNodeHash(node)] = true;
 
   for (let i = 0; i < validNodes.length; i++) {
+    // compute distance from current node to start node and subtract it from tails
+    let tailTrim = distance(node, validNodes[i]);
+
     let neighbors = pessimistic
-      ? goodNeighbors(state, validNodes[i])
-      : validNeighbors(state, validNodes[i]);
+      ? goodNeighbors(state, validNodes[i], false, tailTrim)
+      : validNeighbors(state, validNodes[i], tailTrim);
     for (let j = 0; j < neighbors.length; j++) {
       if (!seenNodes[getNodeHash(neighbors[j])]) {
         seenNodes[getNodeHash(neighbors[j])] = true;
@@ -275,8 +278,9 @@ function isSameNode(a, b) {
   return a.x === b.x && a.y === b.y;
 }
 
-function isInNodes(node, nodes) {
-  for (let i = 0; i < nodes.length; i++) {
+function isInNodes(node, nodes, tailTrim) {
+  tailTrim = tailTrim || 0;
+  for (let i = 0; i < (nodes.length - tailTrim); i++) {
     if (node.x === nodes[i].x && node.y === nodes[i].y) return true;
   }
   return false;
@@ -291,9 +295,9 @@ function isAdjacent(a, b) {
     return false;
 }
 
-function isSnake(state, node) {
+function isSnake(state, node, tailTrim) {
   for (let i = 0; i < state.snakes.data.length; i++) {
-    if (isInNodes(node, state.snakes.data[i].body.data)) {
+    if (isInNodes(node, state.snakes.data[i].body.data, tailTrim)) {
       return true;
     }
   }
@@ -321,22 +325,22 @@ function neighbors(node) {
   ];
 }
 
-function validNeighbors(state, node) {
+function validNeighbors(state, node, tailTrim) {
   return neighbors(node).filter((node) => {
     // walls are not valid
     if (isWall(state, node)) return false;
 
     // don't consider occupied nodes unless they are moving tails
-    if (isSnake(state, node) && !isMovingTail(state, node)) return false;
+    if (isSnake(state, node, tailTrim) && !isMovingTail(state, node)) return false;
 
     // looks valid
     return true;
   });
 }
 
-function goodNeighbors(state, node, kill) {
-  let otherSnakes = kill ? getBiggerSnakes(state) : getOtherSnakes(state);
-  return validNeighbors(state, node).filter((node) => {
+function goodNeighbors(state, node, headShot, tailTrim) {
+  let otherSnakes = headShot ? getBiggerSnakes(state) : getOtherSnakes(state);
+  return validNeighbors(state, node, tailTrim).filter((node) => {
     // don't consider nodes adjacent to the head of another snake
     return !isPossibleNextMove(state, otherSnakes, node);
   });
