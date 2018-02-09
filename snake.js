@@ -43,9 +43,10 @@ module.exports.move = function(req, res) {
   }
 
   // eliminate food paths that we can't fit into
+  // compute space size pessimistically (avoid nodes next to enemy heads)
   results = results.filter((result) => {
     if (result.path.length < 2) return false;
-    let spaceSize = getSpaceSize(state, result.path[1]);
+    let spaceSize = getSpaceSize(state, result.path[1], true);
     return spaceSize > ourSnake.body.data.length;
   });
 
@@ -74,13 +75,13 @@ module.exports.move = function(req, res) {
   let foodAdvantage = foodAdvantages.length && foodAdvantages[0];
   let foodOpportunity = foodOpportunities.length && foodOpportunities[0];
 
-  // 'must eat' if steps to food consume >70% of health
-  // 'should eat' if steps to food consume >30% of health
-  // 'seek food' if food advantage is < 3
-  let canEat = results.length;
-  let mustEat = canEat && (ourSnake.health * .7) < closestFood;
-  let shouldEat = canEat && (ourSnake.health * .3) < closestFood;
-  let seekFood = foodAdvantage && foodAdvantage.advantage < 3;
+  // 'must eat' if steps to food consume >50% of health
+  // 'should eat' if health < 20% or steps to food consume >25% of health
+  // 'seek food' if food advantage is < 5
+  let canEat = results.length > 0;
+  let mustEat = canEat && closestFood > (ourSnake.health * .5);
+  let shouldEat = canEat && (ourSnake.health < 20 || closestFood > (ourSnake.health * .25));
+  let seekFood = canEat && foodAdvantage && foodAdvantage.advantage < 5;
   console.log('SHOULD/MUST/SEEK', shouldEat, mustEat, seekFood);
 
   // if eating is optional, seek tail nodes
@@ -122,11 +123,10 @@ module.exports.move = function(req, res) {
       result.cost += COST_LIGHT;
     }
 
-    // lightly if: food path, multiple food paths, no advantage, not most available
+    // lightly if: food path, multiple food paths, not our advantage and not most available
     if (result.goal === 'FOOD'
       && state.food.data.length > 1
-      && foodAdvantage
-      && foodAdvantage.advantage < 1
+      && (getNodeHash(endNode) !== getNodeHash(foodAdvantage.foodNode) || foodAdvantage.advantage < 1)
       && getNodeHash(endNode) !== getNodeHash(foodOpportunity.foodNode)
     ) {
       result.cost += COST_LIGHT;
@@ -147,26 +147,18 @@ module.exports.move = function(req, res) {
   }
 
   // no best moves, pick the direction that has the most open space
-  let moves = [];
-  let headNeighbors = validNeighbors(state, ourHead);
-  for (let i = 0; i < headNeighbors.length; i++) {
-    let neighbor = headNeighbors[i];
-    moves.push({
-      node: neighbor,
-      direction: direction(ourHead, neighbor),
-      spaceSize: getSpaceSize(state, neighbor),
-      wallCost: getWallCost(state, neighbor),
-      isNextMove: isPossibleNextMove(state, getOtherSnakes(state), neighbor)
-    });
-  }
+  // first be pessimistic and avoid nodes next to enemy heads
+  // if that fails, be optimistic and include nodes next to enemy heads
+  let moves = getSpaciousMoves(state, ourHead, true);
+  moves = moves.length ? moves : getSpaciousMoves(state, ourHead);
   moves.sort((a, b) => {
-    // avoid nodes enemy snakes might move into
-    if (a.spaceSize == b.spaceSize && a.isNextMove != b.isNextMove) {
+    // avoid nodes bigger enemy snakes might move into
+    if (a.spaceSize === b.spaceSize && a.isNextMove !== b.isNextMove) {
       return a.isNextMove - b.isNextMove;
     }
 
     // don't cut off escape routes
-    if (a.spaceSize == b.spaceSize) {
+    if (a.spaceSize === b.spaceSize) {
       return a.wallCost - b.wallCost;
     }
 
@@ -184,6 +176,25 @@ module.exports.move = function(req, res) {
   return moveResponse(res, 'up', 'FML');
 }
 
+function getSpaciousMoves(state, ourHead, pessimistic) {
+  let moves = [];
+  let headNeighbors = pessimistic
+    ? goodNeighbors(state, ourHead, true)
+    : validNeighbors(state, ourHead);
+
+  for (let i = 0; i < headNeighbors.length; i++) {
+    let neighbor = headNeighbors[i];
+    moves.push({
+      node: neighbor,
+      direction: direction(ourHead, neighbor),
+      spaceSize: getSpaceSize(state, neighbor, pessimistic),
+      wallCost: getWallCost(state, neighbor),
+      isNextMove: isPossibleNextMove(state, getBiggerSnakes(state), neighbor)
+    });
+  }
+  return moves;
+}
+
 function moveResponse(res, move, taunt) {
   taunt = taunt + ' ' + move;
   console.log(taunt);
@@ -198,14 +209,15 @@ function enemyDistance(state, node) {
   }, Number.MAX_SAFE_INTEGER);
 }
 
-// *** add a pessimistic mode that 'adds 3 heads' to each snake
-function getSpaceSize(state, node) {
+function getSpaceSize(state, node, pessimistic) {
   let validNodes = [node];
   let seenNodes  = {};
   seenNodes[getNodeHash(node)] = true;
 
   for (let i = 0; i < validNodes.length; i++) {
-    let neighbors = validNeighbors(state, validNodes[i]);
+    let neighbors = pessimistic
+      ? goodNeighbors(state, validNodes[i])
+      : validNeighbors(state, validNodes[i]);
     for (let j = 0; j < neighbors.length; j++) {
       if (!seenNodes[getNodeHash(neighbors[j])]) {
         seenNodes[getNodeHash(neighbors[j])] = true;
@@ -251,7 +263,7 @@ function getOtherSnakes(state, snakeId) {
   });
 }
 
-function getHurtfulSnakes(state, snakeId) {
+function getBiggerSnakes(state, snakeId) {
   if (!snakeId) snakeId = state.you.id;
   let subjectSnake = getSnake(state, snakeId);
   return state.snakes.data.filter((snake) => {
@@ -322,10 +334,11 @@ function validNeighbors(state, node) {
   });
 }
 
-function goodNeighbors(state, node) {
+function goodNeighbors(state, node, kill) {
+  let otherSnakes = kill ? getBiggerSnakes(state) : getOtherSnakes(state);
   return validNeighbors(state, node).filter((node) => {
-    // don't consider nodes adjacent to the head of a bigger snake
-    return !isPossibleNextMove(state, getHurtfulSnakes(state), node);
+    // don't consider nodes adjacent to the head of another snake
+    return !isPossibleNextMove(state, otherSnakes, node);
   });
 }
 
@@ -368,8 +381,7 @@ function getProximityToSnakes(state, snakes, node) {
     // insignificant proximity if > half the board away
     if (gap >= halfBoard) continue;
 
-    // otherwise, proximity is closeness squared, then quartered
-    proximity += Math.pow(halfBoard - gap, 2) / 4
+    proximity += halfBoard - gap;
   }
 
   return proximity;
@@ -379,8 +391,8 @@ function heuristic(state, node) {
   // cost goes up if node is close to a wall because that limits escape routes
   let cost = getWallCost(state, node);
 
-  // cost goes up if node is close to another harmful snake
-  cost += getProximityToSnakes(state, getHurtfulSnakes(state), node);
+  // cost goes up if node is close to another snake
+  cost += getProximityToSnakes(state, getOtherSnakes(state), node);
 
   return cost;
 }
@@ -396,7 +408,7 @@ function aStarSearch(state, startNode, targets) {
   let options = {
     start: startNode,
     isEnd: (node) => isInNodes(node, targets),
-    neighbor: (node) => goodNeighbors(state, node),
+    neighbor: (node) => goodNeighbors(state, node, node === startNode),
     distance: distance,
     heuristic: (node) => heuristic(state, node),
     hash: getNodeHash,
