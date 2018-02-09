@@ -115,7 +115,7 @@ module.exports.move = function(req, res) {
 
     // moderately if not a food path and we should be eating
     if (result.goal !== 'FOOD' && (shouldEat || mustEat || seekFood)) {
-      result.cost += COST_MODERATE;
+      result.cost += shouldEat || mustEat ? COST_MODERATE : COST_LIGHT;
     }
 
     // lightly if a food path and we should not be eating
@@ -375,17 +375,17 @@ function isPossibleNextMove(state, snakes, node) {
 
 function getProximityToSnakes(state, snakes, node) {
   let proximity = 0;
-  let halfBoard = (Math.min(state.width, state.height) - 1) / 2;
+  let quarterBoard = (Math.min(state.width, state.height) - 1) / 4;
   for (let i = 0; i < snakes.length; i++) {
     if (snakes[i].id === state.you.id) continue;
 
     let headNode = getHeadNode(snakes[i]);
     let gap = distance(headNode, node);
 
-    // insignificant proximity if > half the board away
-    if (gap >= halfBoard) continue;
+    // insignificant proximity if > 1/4 of the board away
+    if (gap >= quarterBoard) continue;
 
-    proximity += halfBoard - gap;
+    proximity += (quarterBoard - gap) * 10
   }
 
   return proximity;
@@ -412,7 +412,9 @@ function aStarSearch(state, startNode, targets) {
   let options = {
     start: startNode,
     isEnd: (node) => isInNodes(node, targets),
-    neighbor: (node) => goodNeighbors(state, node, node === startNode),
+    neighbor: (node, path) => {
+      return goodNeighbors(state, node, node === startNode, path.length)
+    },
     distance: distance,
     heuristic: (node) => heuristic(state, node),
     hash: getNodeHash,
