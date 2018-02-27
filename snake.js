@@ -161,10 +161,10 @@ module.exports.move = function(req, res) {
   }
 
   // no best moves, pick the direction that has the most open space
-  // first be pessimistic and avoid nodes next to enemy heads
-  // if that fails, be optimistic and include nodes next to enemy heads
-  let moves = getSpaciousMoves(state, ourHead, true);
-  moves = moves.length ? moves : getSpaciousMoves(state, ourHead);
+  // first be pessimistic: avoid nodes next to enemy heads and spaces too small for us
+  // if that fails, be optimistic: include nodes next to enemy heads and small spaces
+  let moves = getSpaciousMoves(state, ourSnake, true);
+  moves = moves.length ? moves : getSpaciousMoves(state, ourSnake);
   moves.sort((a, b) => {
     // avoid nodes bigger enemy snakes might move into
     if (a.spaceSize === b.spaceSize && a.isNextMove !== b.isNextMove) {
@@ -190,18 +190,21 @@ module.exports.move = function(req, res) {
   return moveResponse(res, 'up', 'FML');
 }
 
-function getSpaciousMoves(state, ourHead, pessimistic) {
+function getSpaciousMoves(state, ourSnake, pessimistic) {
   let moves = [];
+  let ourHead = getHeadNode(ourSnake);
   let headNeighbors = pessimistic
     ? goodNeighbors(state, ourHead, true)
     : validNeighbors(state, ourHead);
 
   for (let i = 0; i < headNeighbors.length; i++) {
     let neighbor = headNeighbors[i];
+    let spaceSize = getSpaceSize(state, neighbor, pessimistic);
+    if (pessimistic && spaceSize < ourSnake.body.data.length) continue;
     moves.push({
       node: neighbor,
       direction: direction(ourHead, neighbor),
-      spaceSize: getSpaceSize(state, neighbor, pessimistic),
+      spaceSize: spaceSize,
       wallCost: getWallCost(state, neighbor),
       isNextMove: isPossibleNextMove(state, getBiggerSnakes(state), neighbor)
     });
