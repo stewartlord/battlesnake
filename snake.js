@@ -43,11 +43,12 @@ module.exports.move = function(req, res) {
     foodPaths.push(result);
   }
 
-  // eliminate food paths that we can't fit into
-  // compute space size pessimistically (avoid nodes next to enemy heads)
+  // eliminate food paths we can't reach in time
+  // eliminate food paths we can't fit into (compute space size pessimistically)
   results = foodPaths.filter((result) => {
-    let spaceSize = getSpaceSize(state, result.path[1], true);
-    return spaceSize > ourSnake.body.data.length;
+    if (result.path.length > ourSnake.health) return false;
+    if (getSpaceSize(state, result.path[1], true) < ourSnake.body.data.length) return false;
+    return true;
   });
 
   // determine closest food
