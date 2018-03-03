@@ -13,9 +13,9 @@ module.exports.start = function(req, res) {
 
   // Response data
   var data = {
-    color: "#b2d8ff",
-    name: "Come Slither",
-    head_url: "http://www.placecage.com/c/200/200", // optional, but encouraged!
+    color: "#FF1493",
+    name: "RUTHLESS",
+    head_url: "https://raw.githubusercontent.com/stewartlord/battlesnake/master/head.png",
     taunt: "START",
   };
 
