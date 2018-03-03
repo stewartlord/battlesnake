@@ -417,7 +417,7 @@ function isMovingTail(state, node) {
 
 function isGrowing(snake) {
   let body = snake.body.data;
-  return isSameNode(body[body.length - 1], body[body.length - 2]);
+  return body.length > 1 && isSameNode(body[body.length - 1], body[body.length - 2]);
 }
 
 function isPossibleNextMove(state, snakes, node) {
