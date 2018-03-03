@@ -113,6 +113,28 @@ module.exports.move = function(req, res) {
     }
   }
 
+  // if eating is optional, consider head shots
+  if (!mustEat) {
+    try {
+      let headShots = goodNeighbors(state, ourHead, true);
+      for (let i = 0; i < headShots.length; i++) {
+        // can only head shot smaller snakes
+        let smallerSnake = isPossibleNextMove(state, getSmallerSnakes(state), headShots[i]);
+        if (!smallerSnake) continue;
+
+        // favor our guess at their next move
+        let guessNext = guessNextMove(state, smallerSnake);
+        results.push({
+          goal: 'HEADSHOT',
+          path: [ourHead, headShots[i]],
+          cost: guessNext && isSameNode(headShots[i], guessNext) ? 0 : 1
+        })
+      }
+    } catch (error) {
+      // this code was added game day, don't trust it ^^
+    }
+  }
+
   // adjust the cost of paths
   for (let i = 0; i < results.length; i++) {
     let result = results[i];
@@ -296,6 +318,14 @@ function getBiggerSnakes(state, snakeId) {
   });
 }
 
+function getSmallerSnakes(state, snakeId) {
+  if (!snakeId) snakeId = state.you.id;
+  let subjectSnake = getSnake(state, snakeId);
+  return state.snakes.data.filter((snake) => {
+    return snake.id != snakeId && snake.body.data.length < subjectSnake.body.data.length;
+  });
+}
+
 function isSameNode(a, b) {
   return a.x === b.x && a.y === b.y;
 }
@@ -391,9 +421,10 @@ function isGrowing(snake) {
 }
 
 function isPossibleNextMove(state, snakes, node) {
-  return snakes.some((snake) => {
+  let filtered = snakes.filter((snake) => {
     return isInNodes(node, neighbors(getHeadNode(snake)));
   });
+  return filtered.length ? filtered[0] : false;
 }
 
 function getProximityToSnakes(state, snakes, node) {
@@ -478,4 +509,26 @@ function snakeDirection(snake) {
   let headNode = getHeadNode(snake);
   let nextNode = snake.body.data[1];
   return direction(nextNode, headNode);
+}
+
+function guessNextMove(state, snake) {
+  let headNode = getHeadNode(snake);
+  let possible = validNeighbors(state, headNode);
+
+  let nextInLine;
+  let currentDirection = snakeDirection(snake);
+  if (currentDirection === 'up') {
+    nextInLine = { x: headNode.x, y: headNode.y - 1 };
+  } else if (currentDirection === 'down') {
+    nextInLine = { x: headNode.x, y: headNode.y + 1 };
+  } else if (currentDirection === 'left') {
+    nextInLine = { x: headNode.x - 1, y: headNode.y };
+  } else if (currentDirection === 'right') {
+    nextInLine = { x: headNode.x + 1, y: headNode.y };
+  }
+  if (isInNodes(nextInLine, possible)) {
+    return nextInLine;
+  }
+
+  return possible.length ? possible[0] : null;
 }
