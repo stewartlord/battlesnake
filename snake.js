@@ -6,7 +6,7 @@ const COST_MODERATE = 250;
 const COST_LIGHT = 100;
 
 const STARVING = 15;
-const HUNGRY = 40;
+const HUNGRY = 50;
 
 let state = {};
 
