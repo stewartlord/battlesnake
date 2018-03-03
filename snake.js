@@ -5,6 +5,9 @@ const COST_HEAVY = 1000;
 const COST_MODERATE = 250;
 const COST_LIGHT = 100;
 
+const STARVING = 15;
+const HUNGRY = 40;
+
 let state = {};
 
 // Handle start requests
@@ -37,17 +40,24 @@ module.exports.move = function(req, res) {
   // compute paths to food
   let foodPaths = [];
   for (let i = 0; i < state.food.data.length; i++) {
-    result = aStarSearch(state, ourHead, [state.food.data[i]]);
+    // enable reckless search when STARVING
+    result = aStarSearch(state, ourHead, [state.food.data[i]], ourSnake.health <= STARVING);
     if (result.status != 'success') continue;
     result.goal = 'FOOD';
     foodPaths.push(result);
   }
 
-  // eliminate food paths we can't reach in time
-  // eliminate food paths we can't fit into (compute space size pessimistically)
+  // eliminate unsafe food paths
   results = foodPaths.filter((result) => {
+    // eliminate paths we can't reach in time
     if (result.path.length > ourSnake.health) return false;
+
+    // eliminate food close to the head of a bigger enemy snake
+    if (enemyDistance(state, result.path[result.path.length - 1]) < 3) return false;
+
+    // eliminate paths we can't fit into (compute space size pessimistically)
     if (getSpaceSize(state, result.path[1], true) < ourSnake.body.data.length) return false;
+
     return true;
   });
 
@@ -76,12 +86,12 @@ module.exports.move = function(req, res) {
   let foodAdvantage = foodAdvantages.length && foodAdvantages[0];
   let foodOpportunity = foodOpportunities.length && foodOpportunities[0];
 
-  // 'must eat' if health < 15% or steps to food consume >60% of health
-  // 'should eat' if health < 40% or steps to food consume >30% of health
+  // 'must eat' if STARVING or steps to food consume >=60% of health
+  // 'should eat' if HUNGRY or steps to food consume >=30% of health
   // 'chase food' if food advantage is < 5
   let safeFood = results.length > 0;
-  let mustEat = ourSnake.health < 15 || closestFood > (ourSnake.health * .6);
-  let shouldEat = safeFood && (ourSnake.health < 40 || closestFood > (ourSnake.health * .3));
+  let mustEat = ourSnake.health <= STARVING || closestFood >= (ourSnake.health * .6);
+  let shouldEat = safeFood && (ourSnake.health <= HUNGRY || closestFood >= (ourSnake.health * .3));
   let chaseFood = safeFood && foodAdvantage && foodAdvantage.advantage < 5;
   console.log('MUST/SHOULD/CHASE', mustEat, shouldEat, chaseFood);
 
@@ -291,7 +301,7 @@ function isSameNode(a, b) {
 }
 
 function isInNodes(node, nodes, tailTrim) {
-  tailTrim = tailTrim || 0;
+  tailTrim = tailTrim > 0 ? tailTrim : 0;
   for (let i = 0; i < (nodes.length - tailTrim); i++) {
     if (node.x === nodes[i].x && node.y === nodes[i].y) return true;
   }
@@ -308,6 +318,7 @@ function isAdjacent(a, b) {
 }
 
 function isSnake(state, node, tailTrim) {
+  // @todo don't tail trim snakes that are tail chasing
   for (let i = 0; i < state.snakes.data.length; i++) {
     if (isInNodes(node, state.snakes.data[i].body.data, tailTrim)) {
       return true;
@@ -420,15 +431,17 @@ function direction(fromNode, toNode) {
   if (fromNode.x < toNode.x) return 'right';
 }
 
-function aStarSearch(state, startNode, targets) {
+function aStarSearch(state, startNode, targets, reckless) {
   let options = {
     start: startNode,
     isEnd: (node) => isInNodes(node, targets),
     neighbor: (node, path) => {
-      return goodNeighbors(state, node, node === startNode, path.length)
+      return reckless
+        ? validNeighbors(state, node, path.length)
+        : goodNeighbors(state, node, node === startNode, path.length);
     },
     distance: distance,
-    heuristic: (node) => heuristic(state, node),
+    heuristic: (node) => reckless ? 0 : heuristic(state, node),
     hash: getNodeHash,
     timeout: SEARCH_TIMEOUT
   }
@@ -458,4 +471,11 @@ function getOccupiedNodes(snakes) {
     }
   }
   return nodes;
+}
+
+function snakeDirection(snake) {
+  if (snake.body.data.length < 2) return;
+  let headNode = getHeadNode(snake);
+  let nextNode = snake.body.data[1];
+  return direction(nextNode, headNode);
 }
