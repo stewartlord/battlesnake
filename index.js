@@ -5,7 +5,7 @@ var snake = require('./snake');
 
 var app = express()
 
-app.set('port', (process.env.PORT || 9001))
+app.set('port', (process.argv[2] || 9001))
 app.enable('verbose errors')
 app.use(logger('dev'))
 app.use(bodyParser.json())
