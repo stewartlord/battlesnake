@@ -108,6 +108,7 @@ module.exports.move = function(req, res) {
     for (let i = 0; i < tailTargets.length; i++) {
       result = aStarSearch(state, ourHead, [tailTargets[i]]);
       if (result.status != 'success') continue;
+      if (result.path.length === 1) continue;
       result.goal = 'TAIL';
       results.push(result);
     }
